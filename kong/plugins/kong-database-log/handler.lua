@@ -37,25 +37,27 @@ local function select_one(connection)
   logger.info("Show version num res: ", logger.inspect(res), err)
 end
 
+-- conn is the connection from pgmoon
 local function keepalive_for_perf(conn)
+  -- See detail https://leafo.net/guides/using-postgres-with-openresty.html#pgmoon/connection-pooling
   conn:keepalive(60000, 5)
   conn = nil
 end
 
-local function connect_db(conf)
+local function connect_db(plugin_conf)
   local config = {
-    host = conf.dbl_pg_host,
-    port = conf.dbl_pg_port,
-    timeout = conf.dbl_pg_timeout,
-    user = conf.dbl_pg_user,
-    password = conf.dbl_pg_password,
-    database = conf.dbl_pg_database,
-    schema = conf.dbl_pg_schema or "",
-    ssl = conf.dbl_pg_ssl,
-    ssl_verify = conf.dbl_pg_ssl_verify,
+    host = plugin_conf.dbl_pg_host,
+    port = plugin_conf.dbl_pg_port,
+    timeout = plugin_conf.dbl_pg_timeout,
+    user = plugin_conf.dbl_pg_user,
+    password = plugin_conf.dbl_pg_password,
+    database = plugin_conf.dbl_pg_database,
+    schema = plugin_conf.dbl_pg_schema or "",
+    ssl = plugin_conf.dbl_pg_ssl,
+    ssl_verify = plugin_conf.dbl_pg_ssl_verify,
     --cafile      = conf.dbl_lua_ssl_trusted_certificate_combined,
-    sem_max = conf.dbl_pg_max_concurrent_queries or 0,
-    sem_timeout = (conf.dbl_pg_semaphore_timeout or 60000) / 1000,
+    sem_max = plugin_conf.dbl_pg_max_concurrent_queries or 0,
+    sem_timeout = (plugin_conf.dbl_pg_semaphore_timeout or 60000) / 1000,
   }
 
   local connection = pgmoon.new(config)
@@ -91,16 +93,15 @@ local function log(premature, conf, message)
     end
   end
 
-  local default_string_escape = "\'\'"
   local ip = message.client_ip
   -- TODO: Parse investor_id here
   local investor_id = "\'\'"
   local user_agent = message.request.headers["user-agent"]
-  local method = message.request.method or default_string_escape
-  local url = message.request.url or default_string_escape
-  local device_id = message.request.headers["device-id"] or default_string_escape
-  local brand = message.request.headers["brand"] or default_string_escape
-  local model = message.request.headers["model"] or default_string_escape
+  local method = message.request.method
+  local url = message.request.url
+  local device_id = message.request.headers["device-id"]
+  local brand = message.request.headers["brand"]
+  local model = message.request.headers["model"]
 
   local insert_sql = "INSERT INTO request_logs(investor_id, created_at, user_agent, method, url, ip, device_id, brand, model)" ..
     " VALUES (%s)"
@@ -113,9 +114,8 @@ local function log(premature, conf, message)
   local sql = fmt(insert_sql, arr_val)
   logger.info(sql)
 
-  --local res = conn:query(sql)
+  local res = conn:query(sql)
 
-  -- maybe we should check sock type and sock before keepalive
   logger.info("Reused times = ", conn.sock:getreusedtimes())
 
   keepalive_for_perf(conn)
