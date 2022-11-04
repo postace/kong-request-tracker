@@ -133,9 +133,9 @@ local function log(premature, conf, message)
     return persist_request(self, conf, entries)
   end
   local opts = {
-    retry_count    = 3,
-    flush_timeout  = 10,
-    batch_max_size = 2,
+    retry_count    = conf.dbl_retry_count,
+    flush_timeout  = conf.dbl_flush_timeout,
+    batch_max_size = conf.dbl_batch_max_size,
     process_delay  = 0,
   }
   if not queues then
