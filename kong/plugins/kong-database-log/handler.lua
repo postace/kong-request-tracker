@@ -3,10 +3,12 @@ local pgmoon = require "pgmoon"
 local plugin_servers = require "kong.runloop.plugin_servers"
 
 local kong = kong
---local ngx = ngx
 local logger = kong.log
+local concat = table.concat
 local traceback = debug.traceback
 local tonumber = tonumber
+local fmt = string.format
+local encode_array = require("pgmoon.arrays").encode_array
 local timer_at = ngx.timer.at
 
 local DatabaseLogHandler = {
@@ -84,21 +86,35 @@ local function log(premature, conf, message)
     end
   end
 
-  logger.info("Got a connection")
-  select_one(conn)
-
-  --logger.inspect(message)
-
+  local default_string_escape = "\'\'"
   local ip = message.client_ip
   -- TODO: Parse investor_id here
+  local investor_id = "\'\'"
   local user_agent = message.request.headers["user-agent"]
-  local method = message.request.method
-  local url = message.request.url
-  local device_id = message.request.headers["device-id"]
-  local brand = message.request.headers["brand"]
-  local model = message.request.headers["model"]
+  local method = message.request.method or default_string_escape
+  local url = message.request.url or default_string_escape
+  local device_id = message.request.headers["device-id"] or default_string_escape
+  local brand = message.request.headers["brand"] or default_string_escape
+  local model = message.request.headers["model"] or default_string_escape
 
-  logger.info("Request detail ", ip, user_agent, method, url, device_id, brand, model)
+  local insert_sql = "INSERT INTO request_logs(investor_id, created_at, user_agent, method, url, ip, device_id, brand, model)" ..
+    " VALUES (%s)"
+
+  --local sql = "INSERT INTO request_logs(investor_id, created_at, user_agent, method, url, ip, device_id, brand, model)" ..
+  --  " VALUES (" .. encode_array({'', os.date(), user_agent, method, url, ip, device_id, brand, model}) .. ")"
+
+  local arr_val = encode_array({'', os.date(), user_agent, method, url, ip, device_id, brand, model})
+
+  arr_val =arr_val:gsub('ARRAY%[', "" )
+  arr_val = arr_val:gsub('%]', "")
+
+  local sql = fmt(insert_sql, arr_val)
+  logger.info(sql)
+
+  local res = conn:query(sql)
+  --conn:keepalive()
+  --conn = nil
+  --logger.info(res)
 
 end
 
