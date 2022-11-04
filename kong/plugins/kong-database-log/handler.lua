@@ -92,29 +92,6 @@ local function create_table_if_not_exists(conf)
 end
 
 -- message = kong.log.serialize()
-local function parse_to_sql(message)
-  local ip = message.client_ip
-  -- TODO: Parse investor_id here
-  local investor_id = ""
-  local user_agent = message.request.headers["user-agent"]
-  local method = message.request.method
-  local url = message.request.url
-  local device_id = message.request.headers["device-id"]
-  local brand = message.request.headers["brand"]
-  local model = message.request.headers["model"]
-
-  local insert_sql = "INSERT INTO request_logs(investor_id, created_at, user_agent, method, url, ip, device_id, brand, model)" ..
-    " VALUES (%s)"
-
-  local arr_val = encode_array({ '', os.date(), user_agent, method, url, ip, device_id, brand, model })
-
-  arr_val = arr_val:gsub('ARRAY%[', "")
-  arr_val = arr_val:gsub('%]', "")
-
-  return fmt(insert_sql, arr_val)
-end
-
--- message = kong.log.serialize()
 local function parse_to_values(message)
   local ip = message.client_ip
   -- TODO: Parse investor_id here
@@ -148,8 +125,6 @@ local function persist_request(self, conf, sql_values)
   local values = table.concat(sql_values, ",")
   local sql = "INSERT INTO request_logs(investor_id, created_at, user_agent, method, url, ip, device_id, brand, model) VALUES " ..
     " " .. values
-
-  logger.info("Values was = ", sql)
 
   conn:query(sql)
 
