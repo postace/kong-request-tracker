@@ -24,7 +24,7 @@ local create_table_sql = [[
     "device_id" VARCHAR(255),
     "brand" VARCHAR(255),
     "model" VARCHAR(255)
-);
+)
 ]]
 
 local queues = nil -- one singleton queue
@@ -78,6 +78,17 @@ local function get_stored_connection(name)
   return ngx.ctx[name]
 end
 
+local function create_table_if_not_exists(conf)
+  local conn = connect_db(conf)
+  if dbl_table_created ~= true then
+    conn:query(create_table_sql)
+    logger.info("Create log table if not exists")
+    dbl_table_created = true
+  end
+
+  keepalive_for_perf(conn)
+end
+
 -- message = kong.log.serialize()
 local function parse_to_sql(message)
   local ip = message.client_ip
@@ -93,9 +104,9 @@ local function parse_to_sql(message)
   local insert_sql = "INSERT INTO request_logs(investor_id, created_at, user_agent, method, url, ip, device_id, brand, model)" ..
     " VALUES (%s)"
 
-  local arr_val = encode_array({'', os.date(), user_agent, method, url, ip, device_id, brand, model})
+  local arr_val = encode_array({ '', os.date(), user_agent, method, url, ip, device_id, brand, model })
 
-  arr_val =arr_val:gsub('ARRAY%[', "" )
+  arr_val = arr_val:gsub('ARRAY%[', "")
   arr_val = arr_val:gsub('%]', "")
 
   return fmt(insert_sql, arr_val)
@@ -127,6 +138,8 @@ local function log(premature, conf, message)
   if premature then
     return
   end
+
+  create_table_if_not_exists(conf)
 
   -- create queue here
   local process = function(entries)
