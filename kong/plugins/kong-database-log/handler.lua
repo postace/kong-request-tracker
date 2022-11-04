@@ -1,13 +1,8 @@
 local BatchQueue = require "kong.tools.batch_queue"
-local cjson = require "cjson"
 local pgmoon = require "pgmoon"
 
 local kong = kong
 local logger = kong.log
-local concat = table.concat
-local traceback = debug.traceback
-local tonumber = tonumber
-local fmt = string.format
 local encode_array = require("pgmoon.arrays").encode_array
 local timer_at = ngx.timer.at
 
@@ -29,17 +24,12 @@ local create_table_sql = [[
 )
 ]]
 
-local queues = nil -- one singleton queue
+local queues -- one singleton queue
 
 local DatabaseLogHandler = {
   PRIORITY = 30, -- set the plugin priority, which determines plugin execution order
   VERSION = "1.0.0", -- version in X.Y.Z format
 }
-
-local function select_one(connection)
-  local res, err = connection:query("SHOW server_version_num;")
-  logger.info("Show version num res: ", logger.inspect(res), err)
-end
 
 -- conn is the connection from pgmoon
 local function keepalive_for_perf(conn)
@@ -111,7 +101,7 @@ local function parse_to_values(message)
   return arr_val
 end
 
-local function persist_request(self, conf, sql_values)
+local function persist_request(conf, sql_values)
   local conn = get_stored_connection(connection_name)
   if conn == nil then
     conn = connect_db(conf)
@@ -144,7 +134,7 @@ local function log(premature, conf, message)
 
   -- create queue here
   local process = function(entries)
-    return persist_request(self, conf, entries)
+    return persist_request(conf, entries)
   end
   local opts = {
     retry_count    = conf.dbl_retry_count,
