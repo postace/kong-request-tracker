@@ -96,14 +96,13 @@ local function get_stored_connection(name)
 end
 
 local function create_table_if_not_exists(conf)
-  local conn = connect_db(conf)
   if is_table_created ~= true then
+    local conn = connect_db(conf)
     conn:query(create_table_sql)
     logger.info("Create log table if not exists")
     is_table_created = true
+    keepalive_for_perf(conn)
   end
-
-  keepalive_for_perf(conn)
 end
 
 -- message = kong.log.serialize()
