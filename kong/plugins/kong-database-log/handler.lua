@@ -8,7 +8,7 @@ local timer_at = ngx.timer.at
 
 local connection_name = "connection_database_log"
 local max_batch_rows = 1000 -- see https://databasefaqs.com/postgresql-insert-multiple-rows
-local dbl_table_created = false
+local is_table_created = false
 
 local create_table_sql = [[
   CREATE TABLE IF NOT EXISTS "request_logs" (
@@ -31,14 +31,13 @@ local DatabaseLogHandler = {
   VERSION = "1.0.0", -- version in X.Y.Z format
 }
 
+-- split array into an array of array, which each item has size equivalent to the passed size
 local function split_array(arr, size)
   local arr_of_arr = {}
-  local sub_array_size = math.ceil(#arr / size)
+  local sub_arr_length = math.ceil(#arr / size)
 
-  for i = 1, sub_array_size, 1
+  for i = 1, sub_arr_length, 1
   do
-    -- 1 -> 1000
-    -- 2 -> 1001 -> 2000
     -- find out which index to start split next
     local j_start = i
     if j_start > 1 then
@@ -98,10 +97,10 @@ end
 
 local function create_table_if_not_exists(conf)
   local conn = connect_db(conf)
-  if dbl_table_created ~= true then
+  if is_table_created ~= true then
     conn:query(create_table_sql)
     logger.info("Create log table if not exists")
-    dbl_table_created = true
+    is_table_created = true
   end
 
   keepalive_for_perf(conn)
@@ -152,7 +151,6 @@ local function persist_request(conf, sql_values)
   return true
 end
 
--- TODO log only 2xx requests
 local function log(premature, conf, message)
   if premature then
     return
@@ -160,7 +158,6 @@ local function log(premature, conf, message)
 
   create_table_if_not_exists(conf)
 
-  -- create queue here
   local process = function(entries)
     return persist_request(conf, entries)
   end
@@ -183,8 +180,21 @@ local function log(premature, conf, message)
 
 end
 
+local function should_log_request(status)
+  if status >= 200 and status < 300 then
+    return true
+  end
+
+  return false
+end
+
 -- runs in the 'log_by_lua_block'
 function DatabaseLogHandler:log(conf)
+  -- TODO: Test this logic should_log_request
+  if ~should_log_request(kong.response.get_status()) then
+    return
+  end
+
   local message = kong.log.serialize()
   local ok, err = timer_at(0, log, conf, message)
   if not ok then
