@@ -3,7 +3,7 @@ local pgmoon = require "pgmoon"
 local plugin_servers = require "kong.runloop.plugin_servers"
 
 local kong = kong
-local ngx = ngx
+--local ngx = ngx
 local logger = kong.log
 local traceback = debug.traceback
 local tonumber = tonumber
@@ -14,10 +14,21 @@ local DatabaseLogHandler = {
   VERSION = "1.0.0", -- version in X.Y.Z format
 }
 
-local db = nil
 local connection_name = "connection_database_log"
---local connect
--- Todo connect to postgres
+
+local create_table_sql = [[
+  CREATE TABLE IF NOT EXISTS "request_logs" (
+    "investor_id" VARCHAR(32),
+    "created_at" TIMESTAMP WITH TIME ZONE,
+    "user_agent" TEXT,
+    "method" VARCHAR(16),
+    "url" VARCHAR(2048),
+    "ip" VARCHAR(255),
+    "device_id" VARCHAR(255),
+    "brand" VARCHAR(255),
+    "model" VARCHAR(255)
+);
+]]
 
 local function select_one(connection)
   local res, err = connection:query("SHOW server_version_num;")
@@ -57,6 +68,7 @@ local function get_stored_connection(name)
 end
 
 -- TODO log only 2xx requests
+-- TODO Resolve why always connect Postgres everytime
 local function log(premature, conf, message)
   if premature then
     return
@@ -64,61 +76,19 @@ local function log(premature, conf, message)
 
   local conn = get_stored_connection(connection_name)
   if conn == nil then
+    logger.info("Stored connection is nil, try to create a new one")
     conn = connect_db(conf)
+    if conn == nil then
+      logger.err("Error when connect to Postgres DB")
+      return
+    end
   end
 
-  if conn == nil then
-    logger.info("Connection is nil. Nothing to do")
-    return
-  else
-    logger.info("Got a connection")
-    select_one(conn)
-  end
+  logger.info("Got a connection")
+  select_one(conn)
 
-  --if db == nil then
-  --  local err
-  --  db, err = connect_db(conf)
-  --  if err ~= nil then
-  --    logger.err("Error when connect to Postgres Db " .. err)
-  --    return
-  --  end
-  --end
-  --
-  --logger.info("Preparing to insert log to db")
-  --show_version_num()
 
 end
-
---do
---  local res, err = db:query("SHOW server_version_num;")
---  local ver = tonumber(res and res[1] and res[1].server_version_num)
---  if not ver then
---    logger.info("failed to retrieve PostgreSQL server_version_num: " .. err)
---  else
---    logger.info("PostgreSQL version: " .. ver)
---  end
---
---end
-
--- handles more initialization, but AFTER the worker process has been forked/created.
--- It runs in the 'init_worker_by_lua_block'
---function DatabaseLogHandler:init_worker()
---  --if kong.db ~= nil then
---  --
---  --end
---  kong.log.debug("init worker start")
---
---end --]]
-
--- runs in the 'access_by_lua_block'
---function DatabaseLogHandler:access(conf)
---  -- Do init connection here due by cosockets not available.
---  -- See more: https://github.com/openresty/lua-nginx-module/blob/master/README.markdown#cosockets-not-available-everywhere
---
---  -- TODO: Find a better way to init connection
---
---
---end --]]
 
 -- runs in the 'log_by_lua_block'
 function DatabaseLogHandler:log(conf)
