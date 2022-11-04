@@ -31,6 +31,32 @@ local DatabaseLogHandler = {
   VERSION = "1.0.0", -- version in X.Y.Z format
 }
 
+local function split_array(arr, size)
+  local arr_of_arr = {}
+  local sub_array_size = math.ceil(#arr / size)
+
+  for i = 1, sub_array_size, 1
+  do
+    -- 1 -> 1000
+    -- 2 -> 1001 -> 2000
+    -- find out which index to start split next
+    local j_start = i
+    if j_start > 1 then
+      j_start = (i - 1) * 3 + 1
+    end
+
+    local _arr = {}
+    for j = j_start, i * size, 1
+    do
+      table.insert(_arr, arr[j])
+    end
+
+    table.insert(arr_of_arr, _arr)
+  end
+
+  return arr_of_arr
+end
+
 -- conn is the connection from pgmoon
 local function keepalive_for_perf(conn)
   -- See detail https://leafo.net/guides/using-postgres-with-openresty.html#pgmoon/connection-pooling
@@ -111,12 +137,14 @@ local function persist_request(conf, sql_values)
     end
   end
 
-  -- TODO: Split by rows, each size is 1000
-  local values = table.concat(sql_values, ",")
-  local sql = "INSERT INTO request_logs(investor_id, created_at, user_agent, method, url, ip, device_id, brand, model) VALUES " ..
-    " " .. values
+  local split_values = split_array(sql_values, max_batch_rows)
+  for _, values in pairs(split_values) do
+    local value_str = table.concat(values, ",")
+    local sql = "INSERT INTO request_logs(investor_id, created_at, user_agent, method, url, ip, device_id, brand, model) VALUES " ..
+      " " .. value_str
 
-  conn:query(sql)
+    conn:query(sql)
+  end
 
   logger.info("Reused times = ", conn.sock:getreusedtimes())
   keepalive_for_perf(conn)
@@ -137,10 +165,10 @@ local function log(premature, conf, message)
     return persist_request(conf, entries)
   end
   local opts = {
-    retry_count    = conf.dbl_retry_count,
-    flush_timeout  = conf.dbl_flush_timeout,
+    retry_count = conf.dbl_retry_count,
+    flush_timeout = conf.dbl_flush_timeout,
     batch_max_size = conf.dbl_batch_max_size,
-    process_delay  = 0,
+    process_delay = 0,
   }
   if not queues then
     local err
