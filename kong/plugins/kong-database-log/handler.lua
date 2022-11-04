@@ -1,6 +1,6 @@
+local BatchQueue = require "kong.tools.batch_queue"
 local cjson = require "cjson"
 local pgmoon = require "pgmoon"
-local plugin_servers = require "kong.runloop.plugin_servers"
 
 local kong = kong
 local logger = kong.log
@@ -10,11 +10,6 @@ local tonumber = tonumber
 local fmt = string.format
 local encode_array = require("pgmoon.arrays").encode_array
 local timer_at = ngx.timer.at
-
-local DatabaseLogHandler = {
-  PRIORITY = 30, -- set the plugin priority, which determines plugin execution order
-  VERSION = "1.0.0", -- version in X.Y.Z format
-}
 
 local connection_name = "connection_database_log"
 
@@ -31,6 +26,11 @@ local create_table_sql = [[
     "model" VARCHAR(255)
 );
 ]]
+
+local DatabaseLogHandler = {
+  PRIORITY = 30, -- set the plugin priority, which determines plugin execution order
+  VERSION = "1.0.0", -- version in X.Y.Z format
+}
 
 local function select_one(connection)
   local res, err = connection:query("SHOW server_version_num;")
@@ -76,26 +76,11 @@ local function get_stored_connection(name)
   return ngx.ctx[name]
 end
 
--- TODO log only 2xx requests
--- TODO Resolve why always connect Postgres everytime
-local function log(premature, conf, message)
-  if premature then
-    return
-  end
-
-  local conn = get_stored_connection(connection_name)
-  if conn == nil then
-    logger.info("Stored connection is nil, try to create a new one")
-    conn = connect_db(conf)
-    if conn == nil then
-      logger.err("Error when connect to Postgres DB")
-      return
-    end
-  end
-
+-- message = kong.log.serialize()
+local function parse_to_sql(message)
   local ip = message.client_ip
   -- TODO: Parse investor_id here
-  local investor_id = "\'\'"
+  local investor_id = ""
   local user_agent = message.request.headers["user-agent"]
   local method = message.request.method
   local url = message.request.url
@@ -111,14 +96,50 @@ local function log(premature, conf, message)
   arr_val =arr_val:gsub('ARRAY%[', "" )
   arr_val = arr_val:gsub('%]', "")
 
-  local sql = fmt(insert_sql, arr_val)
-  logger.info(sql)
+  return fmt(insert_sql, arr_val)
+end
+
+local function persist_request(self, conf, sql)
+  local conn = get_stored_connection(connection_name)
+  if conn == nil then
+    logger.info("Stored connection is nil, try to create a new one")
+    conn = connect_db(conf)
+    if conn == nil then
+      logger.err("Error when connect to Postgres DB")
+      return
+    end
+  end
 
   local res = conn:query(sql)
-
   logger.info("Reused times = ", conn.sock:getreusedtimes())
-
   keepalive_for_perf(conn)
+end
+
+-- TODO log only 2xx requests
+-- TODO Resolve why always connect Postgres everytime
+local function log(premature, conf, message)
+  if premature then
+    return
+  end
+
+  local sql = parse_to_sql(message)
+
+  -- create queue here
+  --local process = function(entries)
+  --  local payload = entries[1]
+  --  return persist_request(self, conf, payload)
+  --end
+  --local opts = {
+  --  retry_count    = 5,
+  --  flush_timeout  = 2,
+  --  batch_max_size = 2,
+  --  process_delay  = 0,
+  --}
+  --local q, err = BatchQueue.new(process, opts)
+  --if not q then
+  --  kong.log.err("could not create queue: ", err)
+  --  return
+  --end
 
 end
 
