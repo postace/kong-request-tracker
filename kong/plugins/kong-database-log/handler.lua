@@ -9,29 +9,34 @@ local traceback = debug.traceback
 local tonumber = tonumber
 local timer_at = ngx.timer.at
 
-
 local DatabaseLogHandler = {
-PRIORITY = 30, -- set the plugin priority, which determines plugin execution order
-VERSION = "1.0.0", -- version in X.Y.Z format
+  PRIORITY = 30, -- set the plugin priority, which determines plugin execution order
+  VERSION = "1.0.0", -- version in X.Y.Z format
 }
 
 local db = nil
+local connection_name = "connection_database_log"
 --local connect
 -- Todo connect to postgres
 
+local function select_one(connection)
+  local res, err = connection:query("SHOW server_version_num;")
+  logger.info("Show version num res: ", logger.inspect(res), err)
+end
+
 local function connect_db(conf)
   local config = {
-    host        = conf.dbl_pg_host,
-    port        = conf.dbl_pg_port,
-    timeout     = conf.dbl_pg_timeout,
-    user        = conf.dbl_pg_user,
-    password    = conf.dbl_pg_password,
-    database    = conf.dbl_pg_database,
-    schema      = conf.dbl_pg_schema or "",
-    ssl         = conf.dbl_pg_ssl,
-    ssl_verify  = conf.dbl_pg_ssl_verify,
+    host = conf.dbl_pg_host,
+    port = conf.dbl_pg_port,
+    timeout = conf.dbl_pg_timeout,
+    user = conf.dbl_pg_user,
+    password = conf.dbl_pg_password,
+    database = conf.dbl_pg_database,
+    schema = conf.dbl_pg_schema or "",
+    ssl = conf.dbl_pg_ssl,
+    ssl_verify = conf.dbl_pg_ssl_verify,
     --cafile      = conf.dbl_lua_ssl_trusted_certificate_combined,
-    sem_max     = conf.dbl_pg_max_concurrent_queries or 0,
+    sem_max = conf.dbl_pg_max_concurrent_queries or 0,
     sem_timeout = (conf.dbl_pg_semaphore_timeout or 60000) / 1000,
   }
 
@@ -40,12 +45,15 @@ local function connect_db(conf)
   if not ok then
     return nil, err
   end
-
   logger.info("Connected to Postgres")
 
-  connection:keepalive()
+  ngx.ctx[connection_name] = connection
 
-  return connection, nil
+  return ngx.ctx[connection_name]
+end
+
+local function get_stored_connection(name)
+  return ngx.ctx[name]
 end
 
 -- TODO log only 2xx requests
@@ -54,16 +62,30 @@ local function log(premature, conf, message)
     return
   end
 
-  if db == nil then
-    local err
-    db, err = connect_db(conf)
-    if err ~= nil then
-      logger.err("Error when connect to Postgres Db " .. err)
-      return
-    end
+  local conn = get_stored_connection(connection_name)
+  if conn == nil then
+    conn = connect_db(conf)
   end
 
-  logger.info("Preparing to insert log to db")
+  if conn == nil then
+    logger.info("Connection is nil. Nothing to do")
+    return
+  else
+    logger.info("Got a connection")
+    select_one(conn)
+  end
+
+  --if db == nil then
+  --  local err
+  --  db, err = connect_db(conf)
+  --  if err ~= nil then
+  --    logger.err("Error when connect to Postgres Db " .. err)
+  --    return
+  --  end
+  --end
+  --
+  --logger.info("Preparing to insert log to db")
+  --show_version_num()
 
 end
 
