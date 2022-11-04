@@ -37,6 +37,11 @@ local function select_one(connection)
   logger.info("Show version num res: ", logger.inspect(res), err)
 end
 
+local function keepalive_for_perf(conn)
+  conn:keepalive(60000, 5)
+  conn = nil
+end
+
 local function connect_db(conf)
   local config = {
     host = conf.dbl_pg_host,
@@ -100,9 +105,6 @@ local function log(premature, conf, message)
   local insert_sql = "INSERT INTO request_logs(investor_id, created_at, user_agent, method, url, ip, device_id, brand, model)" ..
     " VALUES (%s)"
 
-  --local sql = "INSERT INTO request_logs(investor_id, created_at, user_agent, method, url, ip, device_id, brand, model)" ..
-  --  " VALUES (" .. encode_array({'', os.date(), user_agent, method, url, ip, device_id, brand, model}) .. ")"
-
   local arr_val = encode_array({'', os.date(), user_agent, method, url, ip, device_id, brand, model})
 
   arr_val =arr_val:gsub('ARRAY%[', "" )
@@ -111,10 +113,12 @@ local function log(premature, conf, message)
   local sql = fmt(insert_sql, arr_val)
   logger.info(sql)
 
-  local res = conn:query(sql)
-  --conn:keepalive()
-  --conn = nil
-  --logger.info(res)
+  --local res = conn:query(sql)
+
+  -- maybe we should check sock type and sock before keepalive
+  logger.info("Reused times = ", conn.sock:getreusedtimes())
+
+  keepalive_for_perf(conn)
 
 end
 
