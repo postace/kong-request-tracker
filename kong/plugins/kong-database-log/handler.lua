@@ -104,7 +104,6 @@ end
 local function persist_request(self, conf, sqls)
   local conn = get_stored_connection(connection_name)
   if conn == nil then
-    logger.info("Stored connection is nil, try to create a new one")
     conn = connect_db(conf)
     if conn == nil then
       logger.err("Error when connect to Postgres DB")
