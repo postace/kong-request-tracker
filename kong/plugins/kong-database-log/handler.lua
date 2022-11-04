@@ -1,103 +1,119 @@
--- If you're not sure your plugin is executing, uncomment the line below and restart Kong
--- then it will throw an error which indicates the plugin is being loaded at least.
+local cjson = require "cjson"
+local pgmoon = require "pgmoon"
+local plugin_servers = require "kong.runloop.plugin_servers"
 
---assert(ngx.get_phase() == "timer", "The world is coming to an end!")
-
----------------------------------------------------------------------------------------------
--- In the code below, just remove the opening brackets; `[[` to enable a specific handler
---
--- The handlers are based on the OpenResty handlers, see the OpenResty docs for details
--- on when exactly they are invoked and what limitations each handler has.
----------------------------------------------------------------------------------------------
-
+local kong = kong
+local ngx = ngx
+local logger = kong.log
+local traceback = debug.traceback
+local tonumber = tonumber
+local timer_at = ngx.timer.at
 
 
-local plugin = {
-  PRIORITY = 1000, -- set the plugin priority, which determines plugin execution order
-  VERSION = "1.0.0", -- version in X.Y.Z format. Check hybrid-mode compatibility requirements.
+local DatabaseLogHandler = {
+PRIORITY = 30, -- set the plugin priority, which determines plugin execution order
+VERSION = "1.0.0", -- version in X.Y.Z format
 }
 
+local db = nil
+--local connect
+-- Todo connect to postgres
 
+local function connect_db(conf)
+  local config = {
+    host        = conf.dbl_pg_host,
+    port        = conf.dbl_pg_port,
+    timeout     = conf.dbl_pg_timeout,
+    user        = conf.dbl_pg_user,
+    password    = conf.dbl_pg_password,
+    database    = conf.dbl_pg_database,
+    schema      = conf.dbl_pg_schema or "",
+    ssl         = conf.dbl_pg_ssl,
+    ssl_verify  = conf.dbl_pg_ssl_verify,
+    --cafile      = conf.dbl_lua_ssl_trusted_certificate_combined,
+    sem_max     = conf.dbl_pg_max_concurrent_queries or 0,
+    sem_timeout = (conf.dbl_pg_semaphore_timeout or 60000) / 1000,
+  }
 
--- do initialization here, any module level code runs in the 'init_by_lua_block',
--- before worker processes are forked. So anything you add here will run once,
--- but be available in all workers.
+  local connection = pgmoon.new(config)
+  local ok, err = connection:connect()
+  if not ok then
+    return nil, err
+  end
 
+  logger.info("Connected to Postgres")
 
+  connection:keepalive()
+
+  return connection, nil
+end
+
+-- TODO log only 2xx requests
+local function log(premature, conf, message)
+  if premature then
+    return
+  end
+
+  if db == nil then
+    local err
+    db, err = connect_db(conf)
+    if err ~= nil then
+      logger.err("Error when connect to Postgres Db " .. err)
+      return
+    end
+  end
+
+  logger.info("Preparing to insert log to db")
+
+end
+
+--do
+--  local res, err = db:query("SHOW server_version_num;")
+--  local ver = tonumber(res and res[1] and res[1].server_version_num)
+--  if not ver then
+--    logger.info("failed to retrieve PostgreSQL server_version_num: " .. err)
+--  else
+--    logger.info("PostgreSQL version: " .. ver)
+--  end
+--
+--end
 
 -- handles more initialization, but AFTER the worker process has been forked/created.
 -- It runs in the 'init_worker_by_lua_block'
-function plugin:init_worker()
-
-  -- your custom code here
-  kong.log.debug("saying hi from the 'init_worker' handler")
-
-end --]]
-
-
-
---[[ runs in the 'ssl_certificate_by_lua_block'
--- IMPORTANT: during the `certificate` phase neither `route`, `service`, nor `consumer`
--- will have been identified, hence this handler will only be executed if the plugin is
--- configured as a global plugin!
-function plugin:certificate(plugin_conf)
-
-  -- your custom code here
-  kong.log.debug("saying hi from the 'certificate' handler")
-
-end --]]
-
-
-
---[[ runs in the 'rewrite_by_lua_block'
--- IMPORTANT: during the `rewrite` phase neither `route`, `service`, nor `consumer`
--- will have been identified, hence this handler will only be executed if the plugin is
--- configured as a global plugin!
-function plugin:rewrite(plugin_conf)
-
-  -- your custom code here
-  kong.log.debug("saying hi from the 'rewrite' handler")
-
-end --]]
-
-
+--function DatabaseLogHandler:init_worker()
+--  --if kong.db ~= nil then
+--  --
+--  --end
+--  kong.log.debug("init worker start")
+--
+--end --]]
 
 -- runs in the 'access_by_lua_block'
-function plugin:access(plugin_conf)
+--function DatabaseLogHandler:access(conf)
+--  -- Do init connection here due by cosockets not available.
+--  -- See more: https://github.com/openresty/lua-nginx-module/blob/master/README.markdown#cosockets-not-available-everywhere
+--
+--  -- TODO: Find a better way to init connection
+--
+--
+--end --]]
 
-  -- your custom code here
-  kong.log.inspect(plugin_conf)   -- check the logs for a pretty-printed config!
-  kong.service.request.set_header(plugin_conf.request_header, "this is on a request")
+-- runs in the 'log_by_lua_block'
+function DatabaseLogHandler:log(conf)
 
-end --]]
+  --logger.info("Hello from log block")
+  --local res, err = db:query("SELECT 1")
+  --if err then
+  --  logger.err("Error when select 1 " .. err)
+  --end
 
-
--- runs in the 'header_filter_by_lua_block'
-function plugin:header_filter(plugin_conf)
-
-  -- your custom code here, for example;
-  kong.response.set_header(plugin_conf.response_header, "this is on the response")
-
-end --]]
-
-
---[[ runs in the 'body_filter_by_lua_block'
-function plugin:body_filter(plugin_conf)
-
-  -- your custom code here
-  kong.log.debug("saying hi from the 'body_filter' handler")
-
-end --]]
-
-
---[[ runs in the 'log_by_lua_block'
-function plugin:log(plugin_conf)
-
-  -- your custom code here
-  kong.log.debug("saying hi from the 'log' handler")
-
-end --]]
+  local message = kong.log.serialize()
+  local ok, err = timer_at(0, log, conf, message)
+  if not ok then
+    logger.err("failed to create timer: ", err)
+  end
+end
 
 
 -- return our plugin object
-return plugin
+return DatabaseLogHandler
