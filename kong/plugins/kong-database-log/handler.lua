@@ -12,6 +12,8 @@ local encode_array = require("pgmoon.arrays").encode_array
 local timer_at = ngx.timer.at
 
 local connection_name = "connection_database_log"
+local max_batch_rows = 1000 -- see https://databasefaqs.com/postgresql-insert-multiple-rows
+local dbl_table_created = false
 
 local create_table_sql = [[
   CREATE TABLE IF NOT EXISTS "request_logs" (
@@ -112,7 +114,27 @@ local function parse_to_sql(message)
   return fmt(insert_sql, arr_val)
 end
 
-local function persist_request(self, conf, sqls)
+-- message = kong.log.serialize()
+local function parse_to_values(message)
+  local ip = message.client_ip
+  -- TODO: Parse investor_id here
+  local investor_id = ""
+  local user_agent = message.request.headers["user-agent"]
+  local method = message.request.method
+  local url = message.request.url
+  local device_id = message.request.headers["device-id"]
+  local brand = message.request.headers["brand"]
+  local model = message.request.headers["model"]
+
+  local arr_val = encode_array({ investor_id, os.date(), user_agent, method, url, ip, device_id, brand, model })
+
+  arr_val = arr_val:gsub('ARRAY%[', "(")
+  arr_val = arr_val:gsub('%]', ")")
+
+  return arr_val
+end
+
+local function persist_request(self, conf, sql_values)
   local conn = get_stored_connection(connection_name)
   if conn == nil then
     conn = connect_db(conf)
@@ -122,9 +144,14 @@ local function persist_request(self, conf, sqls)
     end
   end
 
-  for _, sql in ipairs(sqls) do
-    conn:query(sql)
-  end
+  -- TODO: Split by rows, each size is 1000
+  local values = table.concat(sql_values, ",")
+  local sql = "INSERT INTO request_logs(investor_id, created_at, user_agent, method, url, ip, device_id, brand, model) VALUES " ..
+    " " .. values
+
+  logger.info("Values was = ", sql)
+
+  conn:query(sql)
 
   logger.info("Reused times = ", conn.sock:getreusedtimes())
   keepalive_for_perf(conn)
@@ -133,7 +160,6 @@ local function persist_request(self, conf, sqls)
 end
 
 -- TODO log only 2xx requests
--- TODO Resolve why always connect Postgres everytime
 local function log(premature, conf, message)
   if premature then
     return
@@ -160,7 +186,7 @@ local function log(premature, conf, message)
     end
   end
 
-  queues:add(parse_to_sql(message))
+  queues:add(parse_to_values(message))
 
 end
 
