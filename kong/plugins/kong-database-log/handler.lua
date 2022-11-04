@@ -87,18 +87,23 @@ local function log(premature, conf, message)
   logger.info("Got a connection")
   select_one(conn)
 
+  --logger.inspect(message)
+
+  local ip = message.client_ip
+  -- TODO: Parse investor_id here
+  local user_agent = message.request.headers["user-agent"]
+  local method = message.request.method
+  local url = message.request.url
+  local device_id = message.request.headers["device-id"]
+  local brand = message.request.headers["brand"]
+  local model = message.request.headers["model"]
+
+  logger.info("Request detail ", ip, user_agent, method, url, device_id, brand, model)
 
 end
 
 -- runs in the 'log_by_lua_block'
 function DatabaseLogHandler:log(conf)
-
-  --logger.info("Hello from log block")
-  --local res, err = db:query("SELECT 1")
-  --if err then
-  --  logger.err("Error when select 1 " .. err)
-  --end
-
   local message = kong.log.serialize()
   local ok, err = timer_at(0, log, conf, message)
   if not ok then
