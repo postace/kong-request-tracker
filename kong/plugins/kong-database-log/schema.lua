@@ -26,9 +26,9 @@ local schema = {
           { dbl_pg_ssl_verify = { type = "boolean", required = false, default = false }, },
           { dbl_pg_max_concurrent_queries = { type = "number", required = false, default = 0 }, },
           { dbl_pg_semaphore_timeout = { type = "number", required = false, default = 60000 }, },
-          { dbl_retry_count = { type = "number", required = false, default = 1 }, },
-          { dbl_flush_timeout = { type = "number", required = false, default = 1 }, },
-          { dbl_batch_max_size = { type = "number", required = false, default = 1 }, },
+          { dbl_retry_count = { type = "number", required = false, default = 3 }, },
+          { dbl_flush_timeout = { type = "number", required = false, default = 5 }, },
+          { dbl_batch_max_size = { type = "number", required = false, default = 100 }, },
         },
         entity_checks = {
           ---- add some validation rules across fields
