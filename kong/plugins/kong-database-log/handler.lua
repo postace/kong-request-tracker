@@ -27,6 +27,8 @@ local create_table_sql = [[
 );
 ]]
 
+local queues = nil -- one singleton queue
+
 local DatabaseLogHandler = {
   PRIORITY = 30, -- set the plugin priority, which determines plugin execution order
   VERSION = "1.0.0", -- version in X.Y.Z format
@@ -99,7 +101,7 @@ local function parse_to_sql(message)
   return fmt(insert_sql, arr_val)
 end
 
-local function persist_request(self, conf, sql)
+local function persist_request(self, conf, sqls)
   local conn = get_stored_connection(connection_name)
   if conn == nil then
     logger.info("Stored connection is nil, try to create a new one")
@@ -110,9 +112,14 @@ local function persist_request(self, conf, sql)
     end
   end
 
-  local res = conn:query(sql)
+  for _, sql in ipairs(sqls) do
+    conn:query(sql)
+  end
+
   logger.info("Reused times = ", conn.sock:getreusedtimes())
   keepalive_for_perf(conn)
+
+  return true
 end
 
 -- TODO log only 2xx requests
@@ -122,24 +129,26 @@ local function log(premature, conf, message)
     return
   end
 
-  local sql = parse_to_sql(message)
-
   -- create queue here
-  --local process = function(entries)
-  --  local payload = entries[1]
-  --  return persist_request(self, conf, payload)
-  --end
-  --local opts = {
-  --  retry_count    = 5,
-  --  flush_timeout  = 2,
-  --  batch_max_size = 2,
-  --  process_delay  = 0,
-  --}
-  --local q, err = BatchQueue.new(process, opts)
-  --if not q then
-  --  kong.log.err("could not create queue: ", err)
-  --  return
-  --end
+  local process = function(entries)
+    return persist_request(self, conf, entries)
+  end
+  local opts = {
+    retry_count    = 3,
+    flush_timeout  = 10,
+    batch_max_size = 2,
+    process_delay  = 0,
+  }
+  if not queues then
+    local err
+    queues, err = BatchQueue.new(process, opts)
+    if not queues then
+      kong.log.err("could not create queue: ", err)
+      return
+    end
+  end
+
+  queues:add(parse_to_sql(message))
 
 end
 
