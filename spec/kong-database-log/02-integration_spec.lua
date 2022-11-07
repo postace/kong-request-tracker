@@ -5,12 +5,12 @@ local PLUGIN_NAME = "kong-database-log"
 
 
 for _, strategy in helpers.all_strategies() do if strategy == "postgres" then
-  describe(PLUGIN_NAME .. ": (access) [#" .. strategy .. "]", function()
+  describe(PLUGIN_NAME .. ": (log) [#" .. strategy .. "]", function()
     local client
 
     lazy_setup(function()
 
-      local bp = helpers.get_db_utils(strategy == "off" and "postgres" or strategy, nil, { PLUGIN_NAME })
+      local bp = helpers.get_db_utils("postgres", nil, { PLUGIN_NAME })
 
       -- Inject a test route. No need to create a service, there is a default
       -- service which will echo the request.
@@ -21,8 +21,14 @@ for _, strategy in helpers.all_strategies() do if strategy == "postgres" then
       bp.plugins:insert {
         name = PLUGIN_NAME,
         route = { id = route1.id },
-        config = {},
+        config = {
+          dbl_retry_count = 1,
+          dbl_flush_timeout = 1,
+          dbl_batch_max_size = 1
+        },
       }
+
+      helpers.clean_logfile()
 
       -- start kong
       assert(helpers.start_kong({
@@ -49,39 +55,25 @@ for _, strategy in helpers.all_strategies() do if strategy == "postgres" then
       if client then client:close() end
     end)
 
+    -- Test scenario
 
-
-    describe("request", function()
-      it("gets a 'hello-world' header", function()
+    describe("http request", function()
+      it("should log device's info", function()
         local r = client:get("/request", {
           headers = {
-            host = "test1.com"
+            host = "test1.com",
+            user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+            device_id = "11011abcdef",
+            brand = "MacOS",
+            model = "M1"
           }
         })
         -- validate that the request succeeded, response status 200
         assert.response(r).has.status(200)
         -- now check the request (as echoed by mockbin) to have the header
-        local header_value = assert.request(r).has.header("hello-world")
+        --local header_value = assert.request(r).has.header("hello-world")
         -- validate the value of that header
-        assert.equal("this is on a request", header_value)
-      end)
-    end)
-
-
-
-    describe("response", function()
-      it("gets a 'bye-world' header", function()
-        local r = client:get("/request", {
-          headers = {
-            host = "test1.com"
-          }
-        })
-        -- validate that the request succeeded, response status 200
-        assert.response(r).has.status(200)
-        -- now check the response to have the header
-        local header_value = assert.response(r).has.header("bye-world")
-        -- validate the value of that header
-        assert.equal("this is on the response", header_value)
+        --assert.equal("this is on a request", header_value)
       end)
     end)
 

@@ -1,8 +1,10 @@
 local BatchQueue = require "kong.tools.batch_queue"
 local pgmoon = require "pgmoon"
+local jwt = require "kong.plugins.kong-database-log.jwt"
 
 local kong = kong
-local logger = kong.log
+local logger
+
 local encode_array = require("pgmoon.arrays").encode_array
 local timer_at = ngx.timer.at
 
@@ -25,6 +27,13 @@ local create_table_sql = [[
 ]]
 
 local queues -- one singleton queue
+
+-- Initialization block
+do
+  if kong ~= nil then
+    logger = kong.log
+  end
+end
 
 local DatabaseLogHandler = {
   PRIORITY = 30, -- set the plugin priority, which determines plugin execution order
@@ -97,19 +106,25 @@ end
 
 local function create_table_if_not_exists(conf)
   if is_table_created ~= true then
-    local conn = connect_db(conf)
+    local conn, err = connect_db(conf)
+    if err ~= nil then
+      logger.warn("Error when connect to database " .. err)
+      return
+    end
+
     conn:query(create_table_sql)
+
     logger.info("Create log table if not exists")
     is_table_created = true
     keepalive_for_perf(conn)
   end
 end
 
--- message = kong.log.serialize()
-local function parse_to_values(message)
+-- parse to database list of values
+-- @param message is kong.log.serialize()
+-- @return something like ('1101', '2022-11-07 11:11:11', 'user-agent', 'GET', ...)
+local function parse_to_sql_values(message)
   local ip = message.client_ip
-  -- TODO: Parse investor_id here
-  local investor_id = ""
   local user_agent = message.request.headers["user-agent"]
   local method = message.request.method
   local url = message.request.url
@@ -117,8 +132,18 @@ local function parse_to_values(message)
   local brand = message.request.headers["brand"]
   local model = message.request.headers["model"]
 
+  local auth_header = message.request.headers["authorization"]
+  local ok, claims = pcall(jwt.parse_jwt_claims, auth_header)
+  local investor_id = ""
+  if ok then
+    investor_id = claims.investorId
+  end
+
+  -- TODO: Handle path create investor, create investor from Zalo
+
   local arr_val = encode_array({ investor_id, os.date(), user_agent, method, url, ip, device_id, brand, model })
 
+  -- TODO Could we optimize here?
   arr_val = arr_val:gsub('ARRAY%[', "(")
   arr_val = arr_val:gsub('%]', ")")
 
@@ -175,7 +200,7 @@ local function log(premature, conf, message)
     end
   end
 
-  queues:add(parse_to_values(message))
+  queues:add(parse_to_sql_values(message))
 
 end
 
@@ -190,7 +215,8 @@ end
 -- runs in the 'log_by_lua_block'
 function DatabaseLogHandler:log(conf)
   -- TODO: Test this logic should_log_request
-  if ~should_log_request(kong.response.get_status()) then
+  logger.info("Request will not be logged")
+  if not should_log_request(kong.response.get_status()) then
     return
   end
 
@@ -201,6 +227,14 @@ function DatabaseLogHandler:log(conf)
   end
 end
 
+--if _TEST then
+--  -- Note: we prefix it with an underscore, such that the test function and real function have
+--  -- different names. Otherwise an accidental call in the code to `M.FirstToUpper` would
+--  -- succeed in tests, but later fail unexpectedly in production
+--  DatabaseLogHandler._split_array = split_array
+--  DatabaseLogHandler._should_log_request = should_log_request
+--  DatabaseLogHandler._parse_to_sql_values = parse_to_sql_values
+--end
 
 -- return our plugin object
 return DatabaseLogHandler
