@@ -166,6 +166,7 @@ local function persist_request(conf, sql_values)
     local sql = "INSERT INTO request_logs(investor_id, created_at, user_agent, method, url, ip, device_id, brand, model) VALUES " ..
       " " .. value_str
 
+    logger.info("SQL values was", sql)
     conn:query(sql)
   end
 
@@ -214,13 +215,12 @@ end
 
 -- runs in the 'log_by_lua_block'
 function DatabaseLogHandler:log(conf)
-  logger.info("Goes into log block")
   if not should_log_request(kong.response.get_status()) then
-    logger.info("Will not log this request")
     return
   end
 
   local message = kong.log.serialize()
+
   local ok, err = timer_at(0, log, conf, message)
   if not ok then
     logger.err("failed to create timer: ", err)
