@@ -166,7 +166,11 @@ local function persist_request(conf, sql_values)
     local sql = "INSERT INTO request_logs(investor_id, created_at, user_agent, method, url, ip, device_id, brand, model) VALUES " ..
       " " .. value_str
 
-    logger.info("SQL values was", sql)
+    logger.info("SQL values was ", sql)
+    --if _TEST then
+      -- TODO find a better way to re-connect here
+    conn = connect_db(conf)
+    --end
     conn:query(sql)
   end
 
@@ -215,6 +219,7 @@ end
 
 -- runs in the 'log_by_lua_block'
 function DatabaseLogHandler:log(conf)
+  logger.info("Step into log block")
   if not should_log_request(kong.response.get_status()) then
     return
   end
@@ -227,14 +232,14 @@ function DatabaseLogHandler:log(conf)
   end
 end
 
---if _TEST then
---  -- Note: we prefix it with an underscore, such that the test function and real function have
---  -- different names. Otherwise an accidental call in the code to `M.FirstToUpper` would
---  -- succeed in tests, but later fail unexpectedly in production
---  DatabaseLogHandler._split_array = split_array
---  DatabaseLogHandler._should_log_request = should_log_request
---  DatabaseLogHandler._parse_to_sql_values = parse_to_sql_values
---end
+if _TEST then
+  -- Note: we prefix it with an underscore, such that the test function and real function have
+  -- different names. Otherwise an accidental call in the code to `M.FirstToUpper` would
+  -- succeed in tests, but later fail unexpectedly in production
+  DatabaseLogHandler._split_array = split_array
+  DatabaseLogHandler._should_log_request = should_log_request
+  DatabaseLogHandler._parse_to_sql_values = parse_to_sql_values
+end
 
 -- return our plugin object
 return DatabaseLogHandler

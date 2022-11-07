@@ -1,8 +1,35 @@
+local pgmoon = require "pgmoon"
 local helpers = require "spec.helpers"
+local json = require("cjson")
+local kong = kong
 
 
 local PLUGIN_NAME = "kong-database-log"
 
+local function connect_db()
+  local config = {
+    host = "pongo-f586ca67-postgres.pongo-f586ca67",
+    timeout = 60000,
+    user = "kong",
+    password = nil,
+    database = "kong_tests",
+    schema = "",
+    ssl = false,
+    ssl_verify = false,
+    --cafile      = conf.dbl_lua_ssl_trusted_certificate_combined,
+    sem_max = 0,
+    sem_timeout = 60,
+  }
+
+  local connection = pgmoon.new(config)
+  local ok, err = connection:connect()
+  if not ok then
+    kong.log.info("Connected to Postgres err " .. err)
+    return nil, err
+  end
+
+  return connection, nil
+end
 
 for _, strategy in helpers.all_strategies() do if strategy == "postgres" then
   describe(PLUGIN_NAME .. ": (log) [#" .. strategy .. "]", function()
@@ -23,7 +50,7 @@ for _, strategy in helpers.all_strategies() do if strategy == "postgres" then
         route = { id = route1.id },
         config = {
           dbl_retry_count = 1,
-          dbl_flush_timeout = 1,
+          dbl_flush_timeout = 0.1,
           dbl_batch_max_size = 1
         },
       }
@@ -59,21 +86,35 @@ for _, strategy in helpers.all_strategies() do if strategy == "postgres" then
 
     describe("http request", function()
       it("should log device's info", function()
+        -- when
         local r = client:get("/request", {
           headers = {
             host = "test1.com",
-            user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
-            device_id = "11011abcdef",
-            brand = "MacOS",
-            model = "M1"
+            ["User-Agent"] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+            ["Device-Id"] = "11011abcdef",
+            ["Brand"] = "MacOS",
+            ["Model"] = "M1"
           }
         })
-        -- validate that the request succeeded, response status 200
+
+        -- then
         assert.response(r).has.status(200)
+
+        helpers.wait_until(function()
+          local conn = connect_db()
+          kong.log.info("Wait until called")
+          local res = conn:query("select * from request_logs")
+
+          if next(res) ~= nil then
+            local res_json = json.encode(res)
+            assert.same("wow", res_json)
+            return true
+          end
+
+          conn:keepalive()
+        end, 10)
+
         -- now check the request (as echoed by mockbin) to have the header
-        --local header_value = assert.request(r).has.header("hello-world")
-        -- validate the value of that header
-        --assert.equal("this is on a request", header_value)
       end)
     end)
 
