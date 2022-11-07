@@ -136,7 +136,7 @@ local function parse_to_sql_values(message)
   local ok, claims = pcall(jwt.parse_jwt_claims, auth_header)
   local investor_id = ""
   if ok then
-    investor_id = claims.investorId
+    investor_id = claims.investorId or ""
   end
 
   -- TODO: Handle path create investor, create investor from Zalo
@@ -214,9 +214,9 @@ end
 
 -- runs in the 'log_by_lua_block'
 function DatabaseLogHandler:log(conf)
-  -- TODO: Test this logic should_log_request
-  logger.info("Request will not be logged")
+  logger.info("Goes into log block")
   if not should_log_request(kong.response.get_status()) then
+    logger.info("Will not log this request")
     return
   end
 

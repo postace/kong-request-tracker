@@ -15,7 +15,7 @@ local schema = {
         fields = {
           -- a standard defined field (typedef), with some customizations
           { dbl_pg_port = typedefs.port({ default = 5432 }), },
-          { dbl_pg_host = { type = "string", required = true, default = "pongo-6acbd47c-postgres.pongo-6acbd47c" }, },
+          { dbl_pg_host = { type = "string", required = true, default = "pongo-f586ca67-postgres.pongo-f586ca67" }, },
           { dbl_pg_timeout = { type = "number", required = false, default = 60000 }, },
           { dbl_pg_user = { type = "string", required = true, default = "kong" }, },
           { dbl_pg_password = { type = "string", required = false }, },
