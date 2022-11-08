@@ -150,6 +150,14 @@ local function parse_to_sql_values(message)
   return arr_val
 end
 
+-- works when run integration test. to reconnect db if it closed
+local function reconnect_when_ran_test(conn, plugin_conf)
+  if conn.sock:getreusedtimes() == "closed" or conn.sock:getreusedtimes() == nil then
+    return connect_db(plugin_conf)
+  end
+  return conn
+end
+
 local function persist_request(conf, sql_values)
   local conn = get_stored_connection(connection_name)
   if conn == nil then
@@ -166,15 +174,12 @@ local function persist_request(conf, sql_values)
     local sql = "INSERT INTO request_logs(investor_id, created_at, user_agent, method, url, ip, device_id, brand, model) VALUES " ..
       " " .. value_str
 
-    logger.info("SQL values was ", sql)
-    --if _TEST then
-      -- TODO find a better way to re-connect here
-    conn = connect_db(conf)
-    --end
+    conn = reconnect_when_ran_test(conn, conf)
+
     conn:query(sql)
   end
 
-  logger.info("Reused times = ", conn.sock:getreusedtimes())
+  logger.info("Socket reused times = ", conn.sock:getreusedtimes())
   keepalive_for_perf(conn)
 
   return true
@@ -219,12 +224,13 @@ end
 
 -- runs in the 'log_by_lua_block'
 function DatabaseLogHandler:log(conf)
-  logger.info("Step into log block")
   if not should_log_request(kong.response.get_status()) then
     return
   end
 
   local message = kong.log.serialize()
+  -- Kong.log.serialize() redact the auth header, so we need to re-set it here
+  message.request.headers["authorization"] = kong.request.get_header("authorization")
 
   local ok, err = timer_at(0, log, conf, message)
   if not ok then

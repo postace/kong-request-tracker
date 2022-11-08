@@ -86,10 +86,12 @@ for _, strategy in helpers.all_strategies() do if strategy == "postgres" then
 
     describe("http request", function()
       it("should log device's info", function()
+        local jwt_token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIwMDAxMDAwMTE1IiwiYXV0aFNvdXJjZSI6ImludmVzdG9yIiwicm9sZXMiOlsiaW52ZXN0b3IiXSwiaXNzIjoiRE5TRSIsImludmVzdG9ySWQiOiIwMDAxMDAwMTE1IiwiZnVsbE5hbWUiOiJOZ3V54buFbiBWxINuIE3Dom0iLCJzZXNzaW9uSWQiOiJjYTQwM2ZkMS0zNTA3LTRhZTgtYTZlNy1iMmFmMTg0MzMxYmQiLCJ1c2VySWQiOiIzYTJlNTUyOS0yOWE3LTRlNjctOGZiNS01MTQwYmUzOWYwYTciLCJhdWQiOlsiYXVkaWVuY2UiXSwiY3VzdG9tZXJFbWFpbCI6ImVudHJhZGUudGVzdGVyQGdtYWlsLmNvbSIsImN1c3RvZHlDb2RlIjoiMDY0QzAwMDExNSIsImN1c3RvbWVySWQiOiIwMDAxMDAwMTE1IiwiZXhwIjoxNjY3ODY4MDY1LCJjdXN0b21lck1vYmlsZSI6IjAxMTExMTExMTEiLCJpYXQiOjE2Njc4MzkyNjUsInVzZXJuYW1lIjoiMDY0QzAwMDExNSIsInN0YXR1cyI6IkFDVElWRSJ9.mICQoI1iUtw_nMNlgejJEKKXaKGcC0PeS9fHaqhGFA_Zjd4Lmpt6q8D5RHRS7Zp8W8nhF2QG1Ksd0z9v-fCbFZ5voSKwF96H9HwnB6aTAztdyhOh9LBytfPCxPJdxt1daHonuUAexpfTTCMWgRnmpnjC2dMy7GDHyxvrh58GHpI"
         -- when
         local r = client:get("/request", {
           headers = {
             host = "test1.com",
+            ["Authorization"] = "Bearer " .. jwt_token,
             ["User-Agent"] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
             ["Device-Id"] = "11011abcdef",
             ["Brand"] = "MacOS",
@@ -102,12 +104,14 @@ for _, strategy in helpers.all_strategies() do if strategy == "postgres" then
 
         helpers.wait_until(function()
           local conn = connect_db()
-          kong.log.info("Wait until called")
           local res = conn:query("select * from request_logs")
 
           if next(res) ~= nil then
-            local res_json = json.encode(res)
-            assert.same("wow", res_json)
+            assert.same("MacOS", res[1]["brand"])
+            assert.same("M1", res[1]["model"])
+            assert.same("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", res[1]["user_agent"])
+            assert.same("11011abcdef", res[1]["device_id"])
+            assert.same("0001000115", res[1]["investor_id"])
             return true
           end
 
